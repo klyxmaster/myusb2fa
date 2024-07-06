@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOTP Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        input, button {
+            margin-top: 10px;
+            padding: 10px;
+            width: 100%;
+        }
+        .otp {
+            margin-top: 10px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .filename {
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        #fileInput {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TOTP Generator</h1>
+        <button id="loadKeyButton">Load Secret Key</button>
+        <input type="file" id="fileInput" accept=".txt">
+        <div class="filename" id="filename"></div>
+        <div class="otp" id="otp"></div>
+        <div class="countdown" id="countdown"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsSHA/2.4.2/sha.js"></script>
+    <script>
+        let secret = '';
+        let interval;
+
+        document.getElementById('loadKeyButton').addEventListener('click', function() {
+            document.getElementById('fileInput').click();
+        });
+
+        function readFileAndGenerateOTP() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                secret = event.target.result.trim();
+                console.log("Secret key loaded from " + file.name + ":", secret); // Debug information
+                const filename = file.name.split('.').slice(0, -1).join('.');
+                document.getElementById('filename').innerText = `Using key: ${filename}`;
+                startGeneratingTOTP();
+            };
+
+            reader.onerror = function(event) {
+                console.error("Error reading file:", event);
+                alert("Error reading file: " + event);
+            };
+
+            if (file) {
+                reader.readAsText(file);
+            } else {
+                alert("Please select a file.");
+            }
+        }
+
+        function base32ToHex(base32) {
+            const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+            let bits = "";
+            let hex = "";
+            for (let i = 0; i < base32.length; i++) {
+                const val = base32chars.indexOf(base32.charAt(i).toUpperCase());
+                bits += leftpad(val.toString(2), 5, '0');
+            }
+            for (let i = 0; i + 4 <= bits.length; i += 4) {
+                const chunk = bits.substr(i, 4);
+                hex = hex + parseInt(chunk, 2).toString(16);
+            }
+            return hex;
+        }
+
+        function leftpad(str, len, pad) {
+            return (new Array(len + 1).join(pad) + str).slice(-len);
+        }
+
+        function generateTOTP() {
+            if (!secret) {
+                alert("Secret key not found.");
+                return;
+            }
+
+            const epoch = Math.round(new Date().getTime() / 1000.0);
+            const time = leftpad(dec2hex(Math.floor(epoch / 30)), 16, '0');
+
+            const shaObj = new jsSHA("SHA-1", "HEX");
+            shaObj.setHMACKey(base32ToHex(secret), "HEX");
+            shaObj.update(time);
+            const hmac = shaObj.getHMAC("HEX");
+
+            const offset = hex2dec(hmac.substring(hmac.length - 1));
+            const otp = (hex2dec(hmac.substr(offset * 2, 8)) & hex2dec('7fffffff')) + '';
+            const totp = otp.substr(otp.length - 6, 6);
+            console.log("Generated OTP:", totp); // Debug information
+            document.getElementById('otp').innerText = totp;
+
+            updateCountdown();
+        }
+
+        function dec2hex(s) {
+            return (s < 15.5 ? '0' : '') + Math.round(s).toString(16);
+        }
+
+        function hex2dec(s) {
+            return parseInt(s, 16);
+        }
+
+        function startGeneratingTOTP() {
+            if (interval) {
+                clearInterval(interval);
+            }
+            generateTOTP();
+            interval = setInterval(generateTOTP, 30000); // Generate OTP every 30 seconds
+        }
+
+        function updateCountdown() {
+            const countdown = document.getElementById('countdown');
+            let timeLeft = 30 - Math.floor((new Date().getTime() / 1000.0) % 30);
+            countdown.innerText = `New code in ${timeLeft} seconds`;
+
+            setTimeout(updateCountdown, 1000);
+        }
+
+        document.getElementById('fileInput').addEventListener('change', readFileAndGenerateOTP);
+    </script>
+</body>
+</html>
